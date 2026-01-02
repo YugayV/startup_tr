@@ -1,0 +1,16 @@
+# config.yaml
+models:
+  lstm:
+    units: 50
+    dropout: 0.2
+  random_forest:
+    n_estimators: 100
+
+features:
+  technical_indicators: true
+  window_size: 10
+
+saving:
+  save_predictions: true
+  save_plots: true
+  format: ["html", "png"]
