@@ -1929,6 +1929,51 @@ def build_dashboard_for_ticker(ticker: str, instrument_name: str):
             st.write("Профиль таргета и классификации: не задан")
         st.markdown(f"### Рекомендация: **{signals['action']}**")
         st.write(f"Пояснение: {signals['reason']}")
+    st.subheader("Информационная карточка сигнала")
+    info_payload = {
+        "ticker": ticker,
+        "instrument_name": instrument_name,
+        "profile": selected_profile,
+        "years": years,
+        "interval": interval,
+        "horizon": horizon,
+        "lower_q": lower_q,
+        "upper_q": upper_q,
+        "news_score": float(news_score),
+        "future_events_score": float(future_events_score),
+        "patterns": patterns,
+        "signal": {
+            "action": signals["action"],
+            "score": float(signals["score"]),
+            "class_signal": int(signals["class_signal"]),
+            "expected_return": float(signals["expected_return"]),
+            "last_price": float(signals["last_price"]),
+            "target_price": float(signals["target_price"]),
+            "pattern_bias": int(signals["pattern_bias"]),
+            "reason": signals["reason"],
+            "cls_model_used": signals.get("cls_model_used"),
+        },
+    }
+    col_info_left, col_info_right = st.columns([2, 1])
+    with col_info_left:
+        st.json(info_payload)
+    with col_info_right:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Рекомендация": signals["action"],
+                        "Сигнал (класс)": signals["class_signal"],
+                        "Интегральный скоринг": signals["score"],
+                        "Ожидаемая доходность": signals["expected_return"],
+                        "Текущая цена": signals["last_price"],
+                        "Целевая цена": signals["target_price"],
+                        "Профиль": selected_profile,
+                        "Модель классификации": cls_used_label,
+                    }
+                ]
+            )
+        )
 
 
 api = FastAPI(title="FX AI Аналитика API")
