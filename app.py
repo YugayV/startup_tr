@@ -146,7 +146,31 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     df["MACD"] = macd
     df["MACD_signal"] = signal
     df["MACD_diff"] = macd - signal
+    prev_close = close_series.shift(1)
+    tr1 = high_base - low_base
+    tr2 = (high_base - prev_close).abs()
+    tr3 = (low_base - prev_close).abs()
+    df["TR"] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    df["ATR_14"] = df["TR"].rolling(window=14).mean()
     return df
+
+
+def get_atr_volatility_info(df: pd.DataFrame):
+    if "ATR_14" not in df.columns:
+        return None
+    atr_series = df["ATR_14"].dropna()
+    if atr_series.empty:
+        return None
+    current = float(atr_series.iloc[-1])
+    q_low = float(atr_series.quantile(0.33))
+    q_high = float(atr_series.quantile(0.66))
+    if current <= q_low:
+        level = "низкая"
+    elif current >= q_high:
+        level = "высокая"
+    else:
+        level = "средняя"
+    return {"current": current, "q_low": q_low, "q_high": q_high, "level": level}
 
 
 def add_targets(
@@ -1025,6 +1049,49 @@ def build_price_chart(df: pd.DataFrame, instrument_name: str, patterns=None) -> 
     return fig
 
 
+def build_atr_chart(df: pd.DataFrame, instrument_name: str) -> go.Figure:
+    df_plot = df.tail(300)
+    fig = go.Figure()
+    if "ATR_14" in df_plot.columns:
+        atr_series = df_plot["ATR_14"].dropna()
+        if not atr_series.empty:
+            fig.add_trace(
+                go.Scatter(
+                    x=atr_series.index,
+                    y=atr_series.values,
+                    mode="lines",
+                    name="ATR(14)",
+                    line=dict(color="purple", width=2),
+                )
+            )
+            last_date = atr_series.index[-1]
+            last_value = float(atr_series.iloc[-1])
+            fig.add_trace(
+                go.Scatter(
+                    x=[last_date],
+                    y=[last_value],
+                    mode="markers",
+                    name="Текущее значение ATR(14)",
+                    marker=dict(color="black", size=9, symbol="diamond"),
+                )
+            )
+            fig.add_vline(
+                x=last_date,
+                line_color="gray",
+                line_dash="dot",
+                opacity=0.6,
+            )
+    fig.update_layout(
+        title=f"{instrument_name}: ATR(14) и волатильность",
+        xaxis_title="Дата",
+        yaxis_title="ATR(14)",
+        hovermode="x unified",
+        template="plotly_white",
+        legend=dict(orientation="h"),
+    )
+    return fig
+
+
 def build_prediction_chart(
     df: pd.DataFrame,
     model_data,
@@ -1565,6 +1632,30 @@ def combine_signals(
     return details
 
 
+def enrich_signals_with_atr(signals: dict, atr_info: dict | None):
+    if not atr_info:
+        return signals
+    level = atr_info.get("level")
+    current = atr_info.get("current")
+    if current is None or level is None:
+        return signals
+    if level == "высокая":
+        text = f"волатильность сейчас высокая по ATR(14) ({current:.5f})"
+    elif level == "низкая":
+        text = f"волатильность сейчас низкая по ATR(14) ({current:.5f})"
+    else:
+        text = f"волатильность сейчас средняя по ATR(14) ({current:.5f})"
+    reason = signals.get("reason") or ""
+    if reason:
+        reason = reason + "; " + text
+    else:
+        reason = text
+    signals["reason"] = reason
+    signals["atr_14"] = float(current)
+    signals["atr_level"] = level
+    return signals
+
+
 def get_signals_for_ticker(
     ticker: str,
     instrument_name: str,
@@ -1596,6 +1687,7 @@ def get_signals_for_ticker(
     if df_raw is None or df_raw.empty:
         raise ValueError("Не удалось загрузить данные по тикеру")
     df_full = add_features(df_raw)
+    atr_info = get_atr_volatility_info(df_full)
     df_model = add_targets(
         df_full.copy(),
         horizon=horizon,
@@ -1626,6 +1718,7 @@ def get_signals_for_ticker(
         None,
         cls_conf_threshold,
     )
+    signals = enrich_signals_with_atr(signals, atr_info)
     result = {
         "ticker": ticker,
         "instrument_name": instrument_name,
@@ -1648,6 +1741,8 @@ def get_signals_for_ticker(
             "pattern_bias": int(signals["pattern_bias"]),
             "reason": signals["reason"],
             "cls_model_used": signals.get("cls_model_used"),
+            "atr_14": float(signals["atr_14"]) if signals.get("atr_14") is not None else None,
+            "atr_level": signals.get("atr_level"),
         },
     }
     return result
@@ -1695,6 +1790,7 @@ def build_dashboard_for_ticker(ticker: str, instrument_name: str):
             )
             st.stop()
         df_full = add_features(df_raw)
+        atr_info = get_atr_volatility_info(df_full)
         df_model = add_targets(df_full.copy(), horizon=horizon, lower_q=lower_q, upper_q=upper_q)
         model_data = train_models(df_model)
     st.caption(
@@ -1778,11 +1874,24 @@ def build_dashboard_for_ticker(ticker: str, instrument_name: str):
     future_events_score = score_future_events(future_events)
     patterns = detect_patterns(df_full["Close"])
     price_fig = build_price_chart(df_full, instrument_name, patterns=patterns)
+    atr_fig = build_atr_chart(df_full, instrument_name)
     pred_fig = build_prediction_chart(df_model, model_data, price_model, model_weights)
     class_fig = build_classification_chart(df_model, model_data, classifier_override)
     st.subheader("Графики цены и прогнозов")
     st.plotly_chart(price_fig, use_container_width=True)
     st.plotly_chart(pred_fig, use_container_width=True)
+    st.subheader("ATR и волатильность")
+    st.plotly_chart(atr_fig, use_container_width=True)
+    if atr_info:
+        level = atr_info.get("level")
+        current = atr_info.get("current")
+        if level == "высокая":
+            vol_text = "Волатильность сейчас высокая"
+        elif level == "низкая":
+            vol_text = "Волатильность сейчас низкая"
+        else:
+            vol_text = "Волатильность сейчас средняя"
+        st.write(f"{vol_text} (ATR(14) ≈ {current:.5f})")
     if metrics:
         st.markdown("**Качество моделей (тестовый отрезок, регрессия/классификация):**")
         col_lgbm, col_lstm, col_hybrid, col_svc = st.columns(4)
@@ -1876,6 +1985,7 @@ def build_dashboard_for_ticker(ticker: str, instrument_name: str):
         classifier_override,
         cls_conf_threshold,
     )
+    signals = enrich_signals_with_atr(signals, atr_info)
     if future_events:
         st.subheader("Будущие события (экономический календарь)")
         events_df = pd.DataFrame(
@@ -1952,6 +2062,8 @@ def build_dashboard_for_ticker(ticker: str, instrument_name: str):
             "pattern_bias": int(signals["pattern_bias"]),
             "reason": signals["reason"],
             "cls_model_used": signals.get("cls_model_used"),
+            "atr_14": float(signals["atr_14"]) if signals.get("atr_14") is not None else None,
+            "atr_level": signals.get("atr_level"),
         },
     }
     col_info_left, col_info_right = st.columns([2, 1])
@@ -1968,6 +2080,8 @@ def build_dashboard_for_ticker(ticker: str, instrument_name: str):
                         "Ожидаемая доходность": signals["expected_return"],
                         "Текущая цена": signals["last_price"],
                         "Целевая цена": signals["target_price"],
+                        "ATR(14)": signals.get("atr_14"),
+                        "Уровень волатильности": signals.get("atr_level"),
                         "Профиль": selected_profile,
                         "Модель классификации": cls_used_label,
                     }
