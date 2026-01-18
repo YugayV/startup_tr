@@ -7,9 +7,14 @@ import plotly.graph_objects as go
 import requests
 import streamlit as st
 from fastapi import FastAPI, HTTPException
-import lightgbm as lgb
+try:
+    import lightgbm as lgb
+    LGB_AVAILABLE = True
+except Exception:
+    LGB_AVAILABLE = False
 from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
 from datetime import datetime, timedelta
 import xml.etree.ElementTree as ET
 
@@ -260,28 +265,44 @@ def train_models(df: pd.DataFrame):
     x_train, x_test = data[:split], data[split:]
     y_class_train, y_class_test = y_class[:split], y_class[split:]
     y_reg_train, y_reg_test = y_reg[:split], y_reg[split:]
-    class_model = lgb.LGBMClassifier(
-        n_estimators=400,
-        max_depth=-1,
-        learning_rate=0.03,
-        subsample=0.9,
-        colsample_bytree=0.9,
-        objective="multiclass",
-        num_class=3,
-        class_weight="balanced",
-        random_state=42,
-    )
-    class_model.fit(x_train, y_class_train)
-    reg_model = lgb.LGBMRegressor(
-        n_estimators=300,
-        max_depth=6,
-        learning_rate=0.05,
-        subsample=0.9,
-        colsample_bytree=0.9,
-        objective="regression",
-        random_state=42,
-    )
-    reg_model.fit(x_train, y_reg_train)
+    if LGB_AVAILABLE:
+        class_model = lgb.LGBMClassifier(
+            n_estimators=400,
+            max_depth=-1,
+            learning_rate=0.03,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            objective="multiclass",
+            num_class=3,
+            class_weight="balanced",
+            random_state=42,
+        )
+        class_model.fit(x_train, y_class_train)
+        reg_model = lgb.LGBMRegressor(
+            n_estimators=300,
+            max_depth=6,
+            learning_rate=0.05,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            objective="regression",
+            random_state=42,
+        )
+        reg_model.fit(x_train, y_reg_train)
+    else:
+        class_model = GradientBoostingClassifier(
+            n_estimators=300,
+            learning_rate=0.05,
+            max_depth=3,
+            random_state=42,
+        )
+        class_model.fit(x_train, y_class_train)
+        reg_model = GradientBoostingRegressor(
+            n_estimators=300,
+            learning_rate=0.05,
+            max_depth=3,
+            random_state=42,
+        )
+        reg_model.fit(x_train, y_reg_train)
 
     scaler_svc = StandardScaler()
     x_train_scaled = scaler_svc.fit_transform(x_train)
