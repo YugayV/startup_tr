@@ -2126,18 +2126,18 @@ def get_history(ticker: str, years: int = 2, interval: str = "1d"):
     # Add ATR for the chart
     df = add_features(df)
     
-    # Prepare data for Plotly
-    # Reset index to get Date as a column
     df = df.reset_index()
     
-    # Convert timestamps to strings for JSON
     dates = df["Date"].dt.strftime("%Y-%m-%d").tolist() if "Date" in df.columns else df.index.astype(str).tolist()
+    open_series = df["Open"] if "Open" in df.columns else df["Close"]
+    high_series = df["High"] if "High" in df.columns else df["Close"]
+    low_series = df["Low"] if "Low" in df.columns else df["Close"]
     
     response = {
         "dates": dates,
-        "open": df["Open"].tolist(),
-        "high": df["High"].tolist(),
-        "low": df["Low"].tolist(),
+        "open": open_series.tolist(),
+        "high": high_series.tolist(),
+        "low": low_series.tolist(),
         "close": df["Close"].tolist(),
         "atr": df["ATR_14"].tolist() if "ATR_14" in df.columns else None
     }
