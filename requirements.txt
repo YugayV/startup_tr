@@ -7,4 +7,3 @@ scikit-learn
 requests
 fastapi
 uvicorn
-aiofiles
