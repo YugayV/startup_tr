@@ -99,13 +99,17 @@
                 `;
 
                 // 2. Get Historical Data for Charts (New Endpoint)
-                const historyUrl = `/history?ticker=${encodeURIComponent(ticker)}&interval=1d&years=2`; // 2 years history
+                const historyUrl = `/history?ticker=${encodeURIComponent(ticker)}&interval=1d&years=2`;
                 const historyRes = await fetch(historyUrl);
                 if (historyRes.ok) {
                     const historyData = await historyRes.json();
                     renderCharts(historyData, predictData.signal);
                 } else {
                     console.error("Failed to fetch history");
+                    const mainChartEl = document.getElementById('mainChart');
+                    if (mainChartEl) {
+                        mainChartEl.textContent = 'Не удалось загрузить исторические данные для графика.';
+                    }
                 }
 
             } catch (err) {
@@ -117,6 +121,13 @@
         }
 
         function renderCharts(data, signal) {
+            if (typeof Plotly === 'undefined') {
+                const mainChartEl = document.getElementById('mainChart');
+                if (mainChartEl) {
+                    mainChartEl.textContent = 'Не удалось загрузить библиотеку графиков (Plotly).';
+                }
+                return;
+            }
             // Main Candlestick Chart
             const trace1 = {
                 x: data.dates,
