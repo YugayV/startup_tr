@@ -194,21 +194,39 @@
                 console.warn('Не удалось построить прогнозную линию:', e);
             }
 
-            const trace1 = {
+            const traceRangeHigh = {
                 x: data.dates,
-                close: data.close,
-                decreasing: {line: {color: '#ff4b4b'}},
-                high: data.high,
-                increasing: {line: {color: '#00cc96'}},
-                low: data.low,
-                open: data.open,
-                type: 'candlestick',
-                xaxis: 'x',
-                yaxis: 'y',
-                name: 'Price'
+                y: data.high,
+                type: 'scatter',
+                mode: 'lines',
+                line: {color: '#4b5563', width: 1},
+                name: 'Диапазон цены (High/Low)',
+                hoverinfo: 'skip'
             };
 
-            const traces = [trace1];
+            const traceRangeLow = {
+                x: data.dates,
+                y: data.low,
+                type: 'scatter',
+                mode: 'lines',
+                line: {color: '#4b5563', width: 1},
+                fill: 'tonexty',
+                fillcolor: 'rgba(148, 163, 184, 0.18)',
+                name: 'Диапазон цены (High/Low)',
+                showlegend: false,
+                hoverinfo: 'skip'
+            };
+
+            const traceClose = {
+                x: data.dates,
+                y: data.close,
+                type: 'scatter',
+                mode: 'lines',
+                line: {color: '#e5e7eb', width: 1.6},
+                name: 'Close'
+            };
+
+            const traces = [traceRangeHigh, traceRangeLow, traceClose];
 
             if (Array.isArray(data.ema_8)) {
                 traces.push({
