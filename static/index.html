@@ -103,7 +103,7 @@
                 const historyRes = await fetch(historyUrl);
                 if (historyRes.ok) {
                     const historyData = await historyRes.json();
-                    renderCharts(historyData, predictData.signal);
+                    renderCharts(historyData, predictData.signal, predictData.future_events || []);
                 } else {
                     console.error("Failed to fetch history");
                     const mainChartEl = document.getElementById('mainChart');
@@ -120,7 +120,7 @@
             }
         }
 
-        function renderCharts(data, signal) {
+        function renderCharts(data, signal, events) {
             if (typeof Plotly === 'undefined') {
                 const mainChartEl = document.getElementById('mainChart');
                 if (mainChartEl) {
@@ -128,6 +128,51 @@
                 }
                 return;
             }
+
+            let forecastTrace = null;
+            let lastDateStr = null;
+            let lastClose = null;
+            let forecastEndDate = null;
+            try {
+                const n = data.dates.length;
+                if (n > 0 && signal && typeof signal.target_price === 'number') {
+                    lastDateStr = data.dates[n - 1];
+                    lastClose = data.close[n - 1];
+                    const targetPrice = signal.target_price;
+                    const steps = 7;
+
+                    const addDaysISO = (dateStr, days) => {
+                        const d = new Date(dateStr);
+                        d.setDate(d.getDate() + days);
+                        return d.toISOString().slice(0, 10);
+                    };
+
+                    const allDates = [lastDateStr];
+                    const allPrices = [lastClose];
+                    for (let i = 1; i <= steps; i++) {
+                        const d = addDaysISO(lastDateStr, i);
+                        const p = lastClose + (targetPrice - lastClose) * (i / steps);
+                        allDates.push(d);
+                        allPrices.push(p);
+                        if (i === steps) {
+                            forecastEndDate = d;
+                        }
+                    }
+
+                    forecastTrace = {
+                        x: allDates,
+                        y: allPrices,
+                        type: 'scatter',
+                        mode: 'lines+markers',
+                        line: {color: '#1f77b4', dash: 'dot'},
+                        marker: {size: 6},
+                        name: 'Прогноз цены (7 дней)'
+                    };
+                }
+            } catch (e) {
+                console.warn('Не удалось построить прогнозную линию:', e);
+            }
+
             // Main Candlestick Chart
             const trace1 = {
                 x: data.dates,
@@ -142,21 +187,119 @@
                 yaxis: 'y',
                 name: 'Price'
             };
-            
-            // Prediction Arrow/Line (Simplified)
-            // Ideally we'd add the forecast line here
-            
+
+            const traces = [trace1];
+
+            const firstDate = data.dates && data.dates.length > 0 ? data.dates[0] : null;
+            const lastDateDefault = data.dates && data.dates.length > 0 ? data.dates[data.dates.length - 1] : null;
+            const lastDateForLine = forecastEndDate || lastDateStr || lastDateDefault;
+
+            if (lastClose !== null && firstDate && lastDateForLine) {
+                traces.push({
+                    x: [firstDate, lastDateForLine],
+                    y: [lastClose, lastClose],
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: {color: '#888888', dash: 'dash'},
+                    name: 'Текущая цена'
+                });
+            }
+
+            if (signal && typeof signal.support_level === 'number' && firstDate && lastDateForLine) {
+                traces.push({
+                    x: [firstDate, lastDateForLine],
+                    y: [signal.support_level, signal.support_level],
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: {color: '#2ca02c', dash: 'dot'},
+                    name: 'Поддержка (20 дней)'
+                });
+            }
+
+            if (signal && typeof signal.resistance_level === 'number' && firstDate && lastDateForLine) {
+                traces.push({
+                    x: [firstDate, lastDateForLine],
+                    y: [signal.resistance_level, signal.resistance_level],
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: {color: '#d62728', dash: 'dot'},
+                    name: 'Сопротивление (20 дней)'
+                });
+            }
+
+            if (forecastTrace) {
+                traces.push(forecastTrace);
+            }
+
+            let shapes = [];
+            try {
+                if (Array.isArray(events) && events.length && data.dates && data.dates.length) {
+                    const lowVals = data.low.filter(v => typeof v === 'number' && !isNaN(v));
+                    const highVals = data.high.filter(v => typeof v === 'number' && !isNaN(v));
+                    if (lowVals.length && highVals.length) {
+                        const minPrice = Math.min(...lowVals);
+                        const maxPrice = Math.max(...highVals);
+                        const colorByImpact = (impact) => {
+                            const imp = (impact || '').toString().toLowerCase();
+                            if (imp.includes('high') || imp.includes('высок')) return '#d62728';
+                            if (imp.includes('med') || imp.includes('средн')) return '#ff7f0e';
+                            if (imp.includes('low') || imp.includes('низк')) return '#2ca02c';
+                            return '#9467bd';
+                        };
+                        for (const ev of events) {
+                            const t = ev.time || ev.date || ev.datetime;
+                            if (!t) continue;
+                            shapes.push({
+                                type: 'line',
+                                x0: t,
+                                x1: t,
+                                y0: minPrice,
+                                y1: maxPrice,
+                                xref: 'x',
+                                yref: 'y',
+                                line: {
+                                    color: colorByImpact(ev.impact),
+                                    width: 1,
+                                    dash: 'dot'
+                                }
+                            });
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('Не удалось добавить вертикальные линии событий:', e);
+            }
+
             const layout = {
                 title: `Price History: ${document.getElementById('ticker').options[document.getElementById('ticker').selectedIndex].text}`,
                 dragmode: 'zoom',
-                showlegend: false,
-                xaxis: { rangeslider: { visible: false } }
+                showlegend: true,
+                xaxis: { rangeslider: { visible: false } },
+                shapes: shapes
             };
             
-            Plotly.newPlot('mainChart', [trace1], layout);
+            Plotly.newPlot('mainChart', traces, layout);
 
-            // ATR Chart
             if (data.atr) {
+                const atrValues = data.atr.filter(v => typeof v === 'number' && !isNaN(v));
+                let qLow = null;
+                let qHigh = null;
+                if (atrValues.length > 0) {
+                    const sorted = [...atrValues].sort((a, b) => a - b);
+                    const quantile = (arr, q) => {
+                        const pos = (arr.length - 1) * q;
+                        const base = Math.floor(pos);
+                        const rest = pos - base;
+                        if (arr[base + 1] !== undefined) {
+                            return arr[base] + rest * (arr[base + 1] - arr[base]);
+                        } else {
+                            return arr[base];
+                        }
+                    };
+                    qLow = quantile(sorted, 0.33);
+                    qHigh = quantile(sorted, 0.66);
+                }
+
                 const trace2 = {
                     x: data.dates,
                     y: data.atr,
@@ -165,6 +308,30 @@
                     line: {color: '#ffa15a'},
                     name: 'ATR(14)'
                 };
+
+                const atrTraces = [trace2];
+
+                if (qLow !== null) {
+                    atrTraces.push({
+                        x: data.dates,
+                        y: new Array(data.dates.length).fill(qLow),
+                        type: 'scatter',
+                        mode: 'lines',
+                        line: {color: '#2ca02c', dash: 'dot'},
+                        name: 'ATR нижняя граница'
+                    });
+                }
+
+                if (qHigh !== null) {
+                    atrTraces.push({
+                        x: data.dates,
+                        y: new Array(data.dates.length).fill(qHigh),
+                        type: 'scatter',
+                        mode: 'lines',
+                        line: {color: '#d62728', dash: 'dot'},
+                        name: 'ATR верхняя граница'
+                    });
+                }
                 
                 const layout2 = {
                     title: 'Average True Range (14)',
@@ -172,7 +339,7 @@
                     yaxis: { title: 'ATR' }
                 };
                 
-                Plotly.newPlot('atrChart', [trace2], layout2);
+                Plotly.newPlot('atrChart', atrTraces, layout2);
             }
         }
         

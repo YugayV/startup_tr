@@ -1690,6 +1690,24 @@ def get_signals_for_ticker(
         raise ValueError("Не удалось загрузить данные по тикеру")
     df_full = add_features(df_raw)
     atr_info = get_atr_volatility_info(df_full)
+
+    support_level = None
+    resistance_level = None
+    if "Low_20" in df_full.columns:
+        try:
+            val = float(df_full["Low_20"].iloc[-1])
+            if not np.isnan(val):
+                support_level = val
+        except Exception:
+            support_level = None
+    if "High_20" in df_full.columns:
+        try:
+            val = float(df_full["High_20"].iloc[-1])
+            if not np.isnan(val):
+                resistance_level = val
+        except Exception:
+            resistance_level = None
+
     df_model = add_targets(
         df_full.copy(),
         horizon=horizon,
@@ -1721,6 +1739,8 @@ def get_signals_for_ticker(
         cls_conf_threshold,
     )
     signals = enrich_signals_with_atr(signals, atr_info)
+    signals["support_level"] = support_level
+    signals["resistance_level"] = resistance_level
     result = {
         "ticker": ticker,
         "instrument_name": instrument_name,
@@ -1732,6 +1752,7 @@ def get_signals_for_ticker(
         "upper_q": upper_q,
         "news_score": float(news_score),
         "future_events_score": float(future_events_score),
+        "future_events": future_events,
         "patterns": patterns,
         "signal": {
             "action": signals["action"],
@@ -1745,6 +1766,8 @@ def get_signals_for_ticker(
             "cls_model_used": signals.get("cls_model_used"),
             "atr_14": float(signals["atr_14"]) if signals.get("atr_14") is not None else None,
             "atr_level": signals.get("atr_level"),
+            "support_level": support_level,
+            "resistance_level": resistance_level,
         },
     }
     return result
