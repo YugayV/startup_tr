@@ -2126,16 +2126,20 @@ def get_history(ticker: str, years: int = 2, interval: str = "1d"):
     df = df.reset_index()
     df = df.replace([np.inf, -np.inf], np.nan)
 
-    dates = df["Date"].dt.strftime("%Y-%m-%d").tolist() if "Date" in df.columns else df.index.astype(str).tolist()
+    dates = (
+        df["Date"].dt.strftime("%Y-%m-%d").tolist()
+        if "Date" in df.columns
+        else df.index.astype(str).tolist()
+    )
     open_series = df["Open"] if "Open" in df.columns else df["Close"]
     high_series = df["High"] if "High" in df.columns else df["Close"]
     low_series = df["Low"] if "Low" in df.columns else df["Close"]
 
-    open_list = open_series.where(open_series.notna(), None).tolist()
-    high_list = high_series.where(high_series.notna(), None).tolist()
-    low_list = low_series.where(low_series.notna(), None).tolist()
-    close_list = df["Close"].where(df["Close"].notna(), None).tolist()
-    atr_list = df["ATR_14"].where(df["ATR_14"].notna(), None).tolist() if "ATR_14" in df.columns else None
+    open_list = open_series.tolist()
+    high_list = high_series.tolist()
+    low_list = low_series.tolist()
+    close_list = df["Close"].tolist()
+    atr_list = df["ATR_14"].tolist() if "ATR_14" in df.columns else None
 
     response = {
         "dates": dates,
@@ -2145,6 +2149,19 @@ def get_history(ticker: str, years: int = 2, interval: str = "1d"):
         "close": close_list,
         "atr": atr_list,
     }
+
+    def _clean_value(x):
+        try:
+            if isinstance(x, (float, np.floating)) and (np.isnan(x) or np.isinf(x)):
+                return None
+        except Exception:
+            return x
+        return x
+
+    for key, value in response.items():
+        if isinstance(value, list):
+            response[key] = [_clean_value(v) for v in value]
+
     return response
 
 
