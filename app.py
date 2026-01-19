@@ -2163,6 +2163,8 @@ def get_history(ticker: str, years: int = 2, interval: str = "1d"):
     low_list = low_series.tolist()
     close_list = df["Close"].tolist()
     atr_list = df["ATR_14"].tolist() if "ATR_14" in df.columns else None
+    ema_21_list = df["EMA_21"].tolist() if "EMA_21" in df.columns else None
+    ema_55_list = df["EMA_55"].tolist() if "EMA_55" in df.columns else None
 
     response = {
         "dates": dates,
@@ -2171,6 +2173,8 @@ def get_history(ticker: str, years: int = 2, interval: str = "1d"):
         "low": low_list,
         "close": close_list,
         "atr": atr_list,
+        "ema_21": ema_21_list,
+        "ema_55": ema_55_list,
     }
 
     def _clean_value(x):
