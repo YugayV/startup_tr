@@ -210,6 +210,17 @@
 
             const traces = [trace1];
 
+            if (Array.isArray(data.ema_8)) {
+                traces.push({
+                    x: data.dates,
+                    y: data.ema_8,
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: {color: '#22c55e', width: 1.6},
+                    name: 'EMA 8'
+                });
+            }
+
             if (Array.isArray(data.ema_21)) {
                 traces.push({
                     x: data.dates,
