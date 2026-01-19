@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FX AI Analytics</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 20px; background-color: #f0f2f6; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #0e1117; }
+        .controls { margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 4px; display: flex; gap: 10px; align-items: center; }
+        select, button { padding: 8px 12px; border-radius: 4px; border: 1px solid #ddd; font-size: 16px; }
+        button { background-color: #ff4b4b; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #ff2b2b; }
+        #loading { display: none; color: #666; margin-left: 10px; }
+        .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-top: 20px; }
+        .chart-container { height: 500px; }
+        .signal-card { background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace; white-space: pre-wrap; overflow-x: auto; font-size: 14px; }
+        .recommendation { font-size: 1.2em; font-weight: bold; margin-bottom: 10px; padding: 10px; border-radius: 4px; text-align: center; }
+        .rec-BUY { background-color: #d4edda; color: #155724; }
+        .rec-SELL { background-color: #f8d7da; color: #721c24; }
+        .rec-HOLD { background-color: #fff3cd; color: #856404; }
+        .metric-box { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>FX AI Analytics Dashboard</h1>
+        
+        <div class="controls">
+            <label for="ticker">Instrument:</label>
+            <select id="ticker">
+                <option value="EURUSD=X" data-name="EUR/USD">EUR/USD</option>
+                <option value="GBPUSD=X" data-name="GBP/USD">GBP/USD</option>
+                <option value="USDJPY=X" data-name="USD/JPY">USD/JPY</option>
+            </select>
+            
+            <label for="profile">Profile:</label>
+            <select id="profile">
+                <option value="">Default</option>
+                <option value="aggressive">Aggressive</option>
+                <option value="conservative">Conservative</option>
+            </select>
+
+            <button onclick="updateDashboard()">Analyze</button>
+            <span id="loading">Loading data...</span>
+        </div>
+
+        <div id="recommendation-banner" class="recommendation"></div>
+
+        <div class="grid">
+            <div>
+                <div id="mainChart" class="chart-container"></div>
+                <div id="atrChart" class="chart-container" style="height: 300px; margin-top: 20px;"></div>
+            </div>
+            
+            <div>
+                <h3>Signal Details</h3>
+                <div id="signalCard" class="signal-card">Select an instrument and click Analyze.</div>
+                
+                <h3>Metrics</h3>
+                <div id="metricsBox" class="signal-card"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function updateDashboard() {
+            const tickerSelect = document.getElementById('ticker');
+            const ticker = tickerSelect.value;
+            const instrumentName = tickerSelect.options[tickerSelect.selectedIndex].getAttribute('data-name');
+            const profile = document.getElementById('profile').value;
+            
+            document.getElementById('loading').style.display = 'inline';
+            
+            try {
+                // 1. Get Prediction Signal
+                const predictUrl = `/predict?ticker=${encodeURIComponent(ticker)}&instrument_name=${encodeURIComponent(instrumentName)}${profile ? `&profile=${profile}` : ''}`;
+                const predictRes = await fetch(predictUrl);
+                const predictData = await predictRes.json();
+                
+                // Render Signal Card
+                document.getElementById('signalCard').textContent = JSON.stringify(predictData, null, 2);
+                
+                // Render Recommendation
+                const action = predictData.signal.action;
+                const recBanner = document.getElementById('recommendation-banner');
+                recBanner.textContent = `Recommendation: ${action} (Score: ${predictData.signal.score.toFixed(2)})`;
+                recBanner.className = `recommendation rec-${action}`;
+                
+                // Render Metrics
+                document.getElementById('metricsBox').innerHTML = `
+                    <div>Last Price: ${predictData.signal.last_price}</div>
+                    <div>Target (7d): ${predictData.signal.target_price}</div>
+                    <div>Exp. Return: ${(predictData.signal.expected_return * 100).toFixed(2)}%</div>
+                    <div>ATR(14): ${predictData.signal.atr_14 || 'N/A'}</div>
+                    <div>Volatility: ${predictData.signal.atr_level || 'N/A'}</div>
+                `;
+
+                // 2. Get Historical Data for Charts (New Endpoint)
+                const historyUrl = `/history?ticker=${encodeURIComponent(ticker)}&interval=1d&years=2`; // 2 years history
+                const historyRes = await fetch(historyUrl);
+                if (historyRes.ok) {
+                    const historyData = await historyRes.json();
+                    renderCharts(historyData, predictData.signal);
+                } else {
+                    console.error("Failed to fetch history");
+                }
+
+            } catch (err) {
+                console.error(err);
+                alert("Error fetching data: " + err.message);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        function renderCharts(data, signal) {
+            // Main Candlestick Chart
+            const trace1 = {
+                x: data.dates,
+                close: data.close,
+                decreasing: {line: {color: '#ff4b4b'}},
+                high: data.high,
+                increasing: {line: {color: '#00cc96'}},
+                low: data.low,
+                open: data.open,
+                type: 'candlestick',
+                xaxis: 'x',
+                yaxis: 'y',
+                name: 'Price'
+            };
+            
+            // Prediction Arrow/Line (Simplified)
+            // Ideally we'd add the forecast line here
+            
+            const layout = {
+                title: `Price History: ${document.getElementById('ticker').options[document.getElementById('ticker').selectedIndex].text}`,
+                dragmode: 'zoom',
+                showlegend: false,
+                xaxis: { rangeslider: { visible: false } }
+            };
+            
+            Plotly.newPlot('mainChart', [trace1], layout);
+
+            // ATR Chart
+            if (data.atr) {
+                const trace2 = {
+                    x: data.dates,
+                    y: data.atr,
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: {color: '#ffa15a'},
+                    name: 'ATR(14)'
+                };
+                
+                const layout2 = {
+                    title: 'Average True Range (14)',
+                    xaxis: { title: 'Date' },
+                    yaxis: { title: 'ATR' }
+                };
+                
+                Plotly.newPlot('atrChart', [trace2], layout2);
+            }
+        }
+        
+        // Initial load
+        // updateDashboard(); 
+    </script>
+</body>
+</html>

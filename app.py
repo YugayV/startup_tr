@@ -7,6 +7,8 @@ import plotly.graph_objects as go
 import requests
 import streamlit as st
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 try:
     import lightgbm as lgb
     LGB_AVAILABLE = True
@@ -2113,6 +2115,42 @@ def predict(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result
+
+
+@api.get("/history")
+def get_history(ticker: str, years: int = 2, interval: str = "1d"):
+    df = load_price_data(ticker, years=years, interval=interval)
+    if df is None or df.empty:
+        raise HTTPException(status_code=404, detail="No data found")
+    
+    # Add ATR for the chart
+    df = add_features(df)
+    
+    # Prepare data for Plotly
+    # Reset index to get Date as a column
+    df = df.reset_index()
+    
+    # Convert timestamps to strings for JSON
+    dates = df["Date"].dt.strftime("%Y-%m-%d").tolist() if "Date" in df.columns else df.index.astype(str).tolist()
+    
+    response = {
+        "dates": dates,
+        "open": df["Open"].tolist(),
+        "high": df["High"].tolist(),
+        "low": df["Low"].tolist(),
+        "close": df["Close"].tolist(),
+        "atr": df["ATR_14"].tolist() if "ATR_14" in df.columns else None
+    }
+    return response
+
+
+# Mount static files
+api.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@api.get("/")
+def read_root():
+    return RedirectResponse(url="/static/index.html")
 
 
 def main():
